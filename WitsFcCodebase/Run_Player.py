@@ -9,9 +9,9 @@ else: # normal agent
 
 # Args: Server IP, Agent Port, Monitor Port, Uniform No., Team name, Enable Log, Enable Draw, Wait for Server, is magmaFatProxy
 if a.D: # debug mode
-    player = Agent(a.i, a.p, a.m, a.u, a.t, True, True, False, a.F)
+    player = Agent(a.i, a.p, a.m, a.u, a.t, True, True, False, False)
 else:
-    player = Agent(a.i, a.p, None, a.u, a.t, False, False, False, a.F)
+    player = Agent(a.i, a.p, None, a.u, a.t, False, False, False, False)
 
 while True:
     player.think_and_send()

@@ -91,39 +91,22 @@ class Agent(Base_Agent):
 
 
     def kick(self, kick_direction=None, kick_distance=None, abort=False, enable_pass_command=False):
-        '''
-        Walk to ball and kick
+     '''
+     Walk to ball and kick with maximum power
+     '''
+    #  if self.min_opponent_ball_dist < 1.45 and enable_pass_command:
+    #     self.scom.commit_pass_command()
 
-        Parameters
-        ----------
-        kick_direction : float
-            kick direction, in degrees, relative to the field
-        kick_distance : float
-            kick distance in meters
-        abort : bool
-            True to abort.
-            The method returns True upon successful abortion, which is immediate while the robot is aligning itself. 
-            However, if the abortion is requested during the kick, it is delayed until the kick is completed.
-        avoid_pass_command : bool
-            When False, the pass command will be used when at least one opponent is near the ball
-            
-        Returns
-        -------
-        finished : bool
-            Returns True if the behavior finished or was successfully aborted.
-        '''
-        return self.behavior.execute("Dribble",None,None)
+     self.kick_direction = self.kick_direction if kick_direction is None else kick_direction
+     self.kick_distance = self.kick_distance if kick_distance is None else kick_distance
 
-        if self.min_opponent_ball_dist < 1.45 and enable_pass_command:
-            self.scom.commit_pass_command()
-
-        self.kick_direction = self.kick_direction if kick_direction is None else kick_direction
-        self.kick_distance = self.kick_distance if kick_distance is None else kick_distance
-
-        if self.fat_proxy_cmd is None: # normal behavior
-            return self.behavior.execute("Basic_Kick", self.kick_direction, abort) # Basic_Kick has no kick distance control
-        else: # fat proxy behavior
-            return self.fat_proxy_kick()
+    # Always use fat proxy kick for maximum power
+     if self.fat_proxy_cmd is not None:
+        return self.fat_proxy_kick()
+     else:
+        # If not in fat proxy mode, use a custom power kick behavior
+        # For now, just use Basic_Kick
+        return self.behavior.execute("Basic_Kick", self.kick_direction, abort)
 
 
     def kickTarget(self, strategyData, mypos_2d=(0,0),target_2d=(0,0), abort=False, enable_pass_command=False):
@@ -254,7 +237,8 @@ class Agent(Base_Agent):
             drawer.annotation((0, 10.5), "GOALKEEPER - CLEARING!", drawer.Color.red, "status")
             # Kick ball away from goal
             clear_direction = M.vector_angle(np.array([15, 0]) - ball_2d)
-            return self.behavior.execute("Basic_Kick", clear_direction)
+            self.kick_direction = clear_direction
+            return self.kick()
         else:
             return self.move(goalkeeper_pos, orientation=M.vector_angle(ball_2d - strategyData.mypos))
     
@@ -270,7 +254,8 @@ class Agent(Base_Agent):
                 kick_direction = M.vector_angle(goal_vector)
                 
                 drawer.arrow(ball_2d, goal_position, 0.4, 3, drawer.Color.red, "kick_target")
-                return self.behavior.execute("Basic_Kick", kick_direction)
+                self.kick_direction = kick_direction
+                return self.kick()
             else:
                 # Move to ball
                 return self.move(ball_2d, orientation=M.vector_angle(ball_2d - strategyData.mypos))
@@ -294,7 +279,8 @@ class Agent(Base_Agent):
                 kick_direction = M.vector_angle(goal_vector)
                 
                 drawer.arrow(ball_2d, goal_position, 0.4, 3, drawer.Color.orange, "kick_target")
-                return self.behavior.execute("Basic_Kick", kick_direction)
+                self.kick_direction = kick_direction
+                return self.kick()
             else:
                 return self.move(ball_2d, orientation=M.vector_angle(ball_2d - strategyData.mypos))
         else:
@@ -315,7 +301,8 @@ class Agent(Base_Agent):
             if ball_distance < 0.5:
                 # Clear the ball forward
                 clear_direction = M.vector_angle(np.array([10, 0]) - ball_2d)
-                return self.behavior.execute("Basic_Kick", clear_direction)
+                self.kick_direction = clear_direction
+                return self.kick()
             else:
                 return self.move(ball_2d, orientation=M.vector_angle(ball_2d - strategyData.mypos))
         else:
