@@ -210,63 +210,117 @@ class Agent(Base_Agent):
 
 
 
-    def select_skill(self,strategyData):
-        #--------------------------------------- 2. Decide action
-        drawer = self.world.draw
-        path_draw_options = self.path_manager.draw_options
-
-
-        #------------------------------------------------------
-        #Role Assignment
-        if strategyData.active_player_unum == strategyData.robot_model.unum: # I am the active player 
-            drawer.annotation((0,10.5), "Role Assignment Phase" , drawer.Color.yellow, "status")
-        else:
-            drawer.clear("status")
-
-        formation_positions = GenerateBasicFormation()
-        point_preferences = role_assignment(strategyData.teammate_positions, formation_positions)
-        strategyData.my_desired_position = point_preferences[strategyData.player_unum]
-        strategyData.my_desried_orientation = strategyData.GetDirectionRelativeToMyPositionAndTarget(strategyData.my_desired_position)
-
-        drawer.line(strategyData.mypos, strategyData.my_desired_position, 2,drawer.Color.blue,"target line")
-
-        if not strategyData.IsFormationReady(point_preferences):
-            return self.move(strategyData.my_desired_position, orientation=strategyData.my_desried_orientation)
-        #else:
-        #     return self.move(strategyData.my_desired_position, orientation=strategyData.ball_dir)
-
-
+    def select_skill(self, strategyData):
+    #--------------------------------------- 2. Decide action
+     drawer = self.world.draw
     
-        #------------------------------------------------------
-        # Example Behaviour
-        target = (15,0) # Opponents Goal
-
-        if strategyData.active_player_unum == strategyData.robot_model.unum: # I am the active player 
-            drawer.annotation((0,10.5), "Pass Selector Phase" , drawer.Color.yellow, "status")
-        else:
-            drawer.clear_player()
-
-        if strategyData.active_player_unum == strategyData.robot_model.unum: # I am the active player 
-            pass_reciever_unum = strategyData.player_unum + 1 # This starts indexing at 1, therefore player 1 wants to pass to player 2
-            if pass_reciever_unum != 6:
-                target = strategyData.teammate_positions[pass_reciever_unum-1] # This is 0 indexed so we actually need to minus 1 
-            else:
-                target = (15,0) 
-
-            drawer.line(strategyData.mypos, target, 2,drawer.Color.red,"pass line")
-            return self.kickTarget(strategyData,strategyData.mypos,target)
-        else:
-            drawer.clear("pass line")
-            return self.move(strategyData.my_desired_position, orientation=strategyData.ball_dir)
+    #------------------------------------------------------
+    # Role Assignment
+     formation_positions = GenerateBasicFormation()
+     point_preferences = role_assignment(strategyData.teammate_positions, formation_positions)
+     strategyData.my_desired_position = point_preferences[strategyData.player_unum]
+    
+     drawer.line(strategyData.mypos, strategyData.my_desired_position, 2, drawer.Color.blue, "target line")
+    
+    # Define roles based on formation positions
+     striker_position = np.array([12, 0])
+     midfielder_position = np.array([7, 1])
+     goalkeeper_position = np.array([-13, 0])
+    
+     is_striker = np.linalg.norm(strategyData.my_desired_position - striker_position) < 0.5
+     is_midfielder = np.linalg.norm(strategyData.my_desired_position - midfielder_position) < 0.5
+     is_goalkeeper = np.linalg.norm(strategyData.my_desired_position - goalkeeper_position) < 0.5
+    
+     ball_2d = self.world.ball_abs_pos[:2]
+     goal_position = np.array([15, 0])
+     my_goal = np.array([-15, 0])
+    
+     ball_distance = np.linalg.norm(ball_2d - strategyData.mypos)
+    
+    #------------------------------------------------------
+    # GOALKEEPER - Stay near goal and defend
+     if is_goalkeeper:
+        drawer.annotation((0, 10.5), "GOALKEEPER", drawer.Color.cyan, "status")
         
-
-
-
-
-
-
-
-
+        # Stay between ball and goal
+        # Keep y-position aligned with ball, but stay near goal line
+        target_x = -13.5
+        target_y = np.clip(ball_2d[1], -1.0, 1.0)  # Don't go too far from center
+        
+        goalkeeper_pos = np.array([target_x, target_y])
+        
+        # If ball is very close and in our half, go for it
+        if ball_2d[0] < -10 and ball_distance < 2.0:
+            drawer.annotation((0, 10.5), "GOALKEEPER - CLEARING!", drawer.Color.red, "status")
+            # Kick ball away from goal
+            clear_direction = M.vector_angle(np.array([15, 0]) - ball_2d)
+            return self.behavior.execute("Basic_Kick", clear_direction)
+        else:
+            return self.move(goalkeeper_pos, orientation=M.vector_angle(ball_2d - strategyData.mypos))
+    
+    #------------------------------------------------------
+    # STRIKER - Always attack the ball and shoot
+     elif is_striker:
+        drawer.annotation((0, 10.5), "STRIKER - ATTACK!", drawer.Color.red, "status")
+        
+        # Always go for the ball
+        if ball_distance < 3.0:  # When close enough to ball
+            if ball_distance < 0.5:  # Very close - kick it!
+                goal_vector = goal_position - ball_2d
+                kick_direction = M.vector_angle(goal_vector)
+                
+                drawer.arrow(ball_2d, goal_position, 0.4, 3, drawer.Color.red, "kick_target")
+                return self.behavior.execute("Basic_Kick", kick_direction)
+            else:
+                # Move to ball
+                return self.move(ball_2d, orientation=M.vector_angle(ball_2d - strategyData.mypos))
+        else:
+            # Position myself ahead of ball
+            attacking_pos = ball_2d + np.array([2, 0])
+            attacking_pos[0] = np.clip(attacking_pos[0], 5, 14)  # Stay in attacking third
+            return self.move(attacking_pos, orientation=M.vector_angle(ball_2d - strategyData.mypos))
+    
+    #------------------------------------------------------
+    # MIDFIELDER - Support striker and take shots when close
+     elif is_midfielder:
+        drawer.annotation((0, 10.5), "MIDFIELDER - SUPPORT", drawer.Color.yellow, "status")
+        
+        # If ball is close and striker isn't closer, go for it
+        if ball_distance < 2.5 and strategyData.active_player_unum == strategyData.player_unum:
+            drawer.annotation((0, 10.5), "MIDFIELDER - SHOOTING!", drawer.Color.orange, "status")
+            
+            if ball_distance < 0.5:
+                goal_vector = goal_position - ball_2d
+                kick_direction = M.vector_angle(goal_vector)
+                
+                drawer.arrow(ball_2d, goal_position, 0.4, 3, drawer.Color.orange, "kick_target")
+                return self.behavior.execute("Basic_Kick", kick_direction)
+            else:
+                return self.move(ball_2d, orientation=M.vector_angle(ball_2d - strategyData.mypos))
+        else:
+            # Stay in supporting position
+            support_pos = ball_2d + np.array([-2, 0])
+            support_pos[0] = np.clip(support_pos[0], 0, 10)
+            return self.move(support_pos, orientation=M.vector_angle(ball_2d - strategyData.mypos))
+    
+    #------------------------------------------------------
+    # DEFENDERS - Stay back but press when ball is near
+     else:
+        drawer.annotation((0, 10.5), "DEFENDER", drawer.Color.blue, "status")
+        
+        # If ball is in our half and close, pressure it
+        if ball_2d[0] < 0 and ball_distance < 3.0:
+            drawer.annotation((0, 10.5), "DEFENDER - PRESSING!", drawer.Color.purple_magenta, "status")
+            
+            if ball_distance < 0.5:
+                # Clear the ball forward
+                clear_direction = M.vector_angle(np.array([10, 0]) - ball_2d)
+                return self.behavior.execute("Basic_Kick", clear_direction)
+            else:
+                return self.move(ball_2d, orientation=M.vector_angle(ball_2d - strategyData.mypos))
+        else:
+            # Maintain defensive formation
+            return self.move(strategyData.my_desired_position, orientation=M.vector_angle(ball_2d - strategyData.mypos))
 
 
 
